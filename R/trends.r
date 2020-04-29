@@ -1,5 +1,6 @@
 
 
+
 combineDat <- function(nnn,ot,deaf=NULL){
     tdat <- do.call('rbind', lapply(ot, function(x) x[[nnn]]))
     names(tdat) <- gsub('bach|hs','y',names(tdat))
@@ -16,19 +17,148 @@ combineDat <- function(nnn,ot,deaf=NULL){
 
     tdat$se[tdat$se==0] <- NA
 
-    if(!is.null(attr(ot,'weightDat'))){
-        tdat <- full_join(tdat,attr(ot,'weightDat'))
-    } else
-        tdat$ww <- if(any(is.na(tdat$se))) tdat$Freq else 1/tdat$se^2
 
     subCols <- setdiff(names(tdat),c('y','AGEP','se','Freq','se1','se2','year','ww'))
     subsets <- if(length(subCols)>1) do.call(expand.grid,lapply(tdat[,subCols],unique))
                else cbind(unique(tdat[,subCols]))
 
 
+   if(!is.null(attr(ot,'weightDat'))){
+        tdat <- full_join(tdat,attr(ot,'weightDat'))
+    } else
+        tdat$ww <- if(any(is.na(tdat$se))) tdat$Freq else 1/tdat$se^2
+
+
     list(tdat=tdat,subCols=subCols,subsets=subsets)
 }
 
+tabClean <- function(.data,name,digits=2){
+    rnd <- function(x) sprintf(paste0('%.',digits,'f'),x)
+    if(!'DEAR'%in%names(.data)) .data$DEAR <- 1
+    .data%>%
+       ungroup()%>%
+       transmute(
+           DEAR,
+           subgroup,
+           !! name:=paste0(rnd(Estimate),' (',rnd(`Std. Error`),')'),
+           !! paste0(name,'p') := `Pr(>|t|)`
+           )#%>%dplyr::select(SUB,everything())
+}
+
+trendTab1 <- function(lev,SUB,ot,trendOrGap=c('trend','gap'),digits=2){
+    fun <- switch(trendOrGap,trend=trends,gap=gapTrend)
+    out <- combineDat(paste0(lev,SUB),ot)%$%
+        fun(tdat,subCols)%>%
+            tabClean(trendOrGap,digits=digits)
+    if(SUB=='RaceF') out$subgroup <- paste(out$subgroup,'F')
+    if(SUB=='RaceM') out$subgroup <- paste(out$subgroup,'M')
+    if(SUB=='ByAgeCat') out <- filter(out,subgroup=='25-34')
+    out$SUB <- switch(SUB,Tot="",ByAgeCat="",Sex="Sex",Race="Race/Ethnicity",RaceM="Race/Ethnicity: Male",RaceF="Race/Ethnicity: Female")
+    out
+}
+
+trends <- function(tdat, subCols){
+
+
+    trnds <- tdat%>%
+        group_by(!!! lapply(subCo0ls,sym))%>%
+            group_modify(estTrend1)
+
+    trnds$subgroup <- if(length(subCols)==1) "Overall" else trnds[[subCols[2]]]
+
+    trnds
+}
+
+
+estTrend1 <- function(ddd,...){
+    form <- y~year+as.factor(AGEP)
+    trnd <- summary(lm_robust(form,data=ddd,weights=ww))$coef['year',]
+    if(is.nan(trnd['Std. Error']))
+        trnd <- summary(lm_robust(form,data=ddd,weights=ww,se_type='HC1'))$coef['year',]
+    as.data.frame(rbind(trnd))
+}
+
+gapTrendOne <- function(tdat,...){
+  mod <-
+    if(any(is.na(tdat$se))){
+      lm_robust(y~(DEAR+splines::ns(AGEP,5))*year,tdat,weights=ww)
+    } else
+      lm_robust(y~(DEAR+as.factor(AGEP))*year,weights=ww,data=tdat)
+
+  as.data.frame(summary(mod)$coef)['DEAR:year',c(1,2,4)]
+}
+
+gapTrend <- function(tdat,subCols,...){
+    gaps <-
+        if(length(subCols)==1){
+            gapTrendOne(tdat)
+        } else
+            tdat%>%
+                group_by_at(vars(!! sym(subCols[2])))%>%
+                    group_modify(gapTrendOne)
+    gaps$subgroup <- if(length(subCols)==1) "Overall" else gaps[[subCols[2]]]
+    gaps
+}
+
+
+
+stars <- function(pval)
+    ifelse(pval<0.001,'***',
+           ifelse(pval<0.01,'**',
+                  ifelse(pval<0.05,'*',
+                         ifelse(pval<0.1,'.',''))))
+
+
+tabsFun <- function(ot, trendOrGap=c('trend','gap'),
+                     subs=c('Tot','ByAgeCat','Sex','Race','RaceM','RaceF'),
+                     onlyDeaf=TRUE,digits=2){
+
+    if(trendOrGap=='gap') onlyDeaf <- TRUE
+
+    tabs <- sapply(c('hs','cc','bach'),
+                   function(lev){
+                       trnds <- map_dfr(subs,~trendTab1(lev=lev,.,ot=ot,trendOrGap=trendOrGap))
+
+                       if(onlyDeaf){
+                           trnds <- trnds%>%filter(DEAR==1)%>%select(-DEAR)
+                       } else
+                           trnds <- trnds%>%
+                               mutate(deaf=ifelse(DEAR==1,'Deaf','Hearing'))%>%
+                                   select(-DEAR)%>%
+                                       pivot_wider(names_from=deaf,values_from=c('trend','trendp'))%>%
+                                           rename(trend=trend_Deaf,trendp=trendp_Deaf)
+                       trnds
+                   }, simplify=FALSE
+                   )
+
+    psTot <- map_dbl(tabs,~ .[[paste0(trendOrGap,'p')]][1])%>%p.adjust(.,'holm')
+    psSub <- do.call('c',map(tabs,~ .[[paste0(trendOrGap,'p')]][-1]))%>%p.adjust(.,'fdr')
+
+    for(lev in c('hs','cc','bach'))
+        tabs[[lev]][[paste0(trendOrGap,'p')]] <- c(psTot[lev],psSub[startsWith(names(psSub),lev)])
+
+    tabs <- map(tabs,function(x) x%>%mutate(!! sym(trendOrGap):=paste0(!!sym(trendOrGap),stars(!!sym(paste0(trendOrGap,'p')))))%>%
+                    select(-starts_with('trendp'),-starts_with('gapp')))
+
+    tabs
+
+}
+
+
+allTabs <- function(overTimeAge,
+                    subs=c('Tot','ByAgeCat','Sex','Race','RaceM','RaceF'),
+                    onlyDeaf=TRUE,digits=2){
+
+    tabs <- sapply(c('trend','gap'),
+                function(x) tabsFun(overTimeAge,trendOrGap=x,subs=subs,onlyDeaf=onlyDeaf,digits=digits),
+                   simplify=FALSE)
+
+    sapply(c('hs','cc','bach'),
+           function(x) full_join(tabs$trend[[x]],tabs$gap[[x]])%>%
+              rename(`Trend in Deaf Attainment`=trend,`Trend in Deaf-Hearing Gap`=gap),
+           simplify=FALSE
+           )
+}
 
 
 
@@ -300,28 +430,6 @@ changeFig <- function(nnn,ot,...){
 
 
 
-trendTab1 <- function(lev,SUB,ot){
-    trnds <- combineTab(paste0(lev,SUB),ot)%>%
-        trends(tdat,subCols)
-}
-
-trends <- function(tdat, subCols){
-
-
-    tdat%>%
-        group_by(!!! lapply(subCols,sym))%>%
-            group_modify(estTrend1)
-
-}
-
-
-estTrend1 <- function(ddd,...){
-    form <- y~year+as.factor(AGEP)
-    trnd <- summary(lm_robust(form,data=ddd,weights=ww))$coef['year',]
-    if(is.nan(trnd['Std. Error']))
-        trnd <- summary(lm_robust(form,data=ddd,weights=ww,se_type='HC1'))$coef['year',]
-    as.data.frame(rbind(trnd))
-}
 
 
 
@@ -510,13 +618,14 @@ mult4 <- function(pTrend,pDiff,alpha,adj=TRUE){
     list(trend=toList(pTrend,rej[1:nTrend]),diff=toList(pDiff,rej[(nTrend+1):length(rej)]))
 }
 
-stars <- function(rej,trend,nn,cc=1){
-  for(rr in rej) if(!is.finite(rr[[trend]][[nn]][cc])) return('')
-  ifelse(rej$`0.001`[[trend]][[nn]][cc],'***',
-           ifelse(rej$`0.01`[[trend]][[nn]][cc],'**',
-           ifelse(rej$`0.05`[[trend]][[nn]][cc],'*',
-                  ifelse(rej$`0.1`[[trend]][[nn]][cc],'.',''))))
-}
+
+   ##  rej,trend,nn,cc=1){
+##   for(rr in rej) if(!is.finite(rr[[trend]][[nn]][cc])) return('')
+##   ifelse(rej$`0.001`[[trend]][[nn]][cc],'***',
+##            ifelse(rej$`0.01`[[trend]][[nn]][cc],'**',
+##            ifelse(rej$`0.05`[[trend]][[nn]][cc],'*',
+##                   ifelse(rej$`0.1`[[trend]][[nn]][cc],'.',''))))
+## }
 
 
 getSampleSizes <- function(nnn,ot,deaf){
@@ -591,30 +700,6 @@ gapAdj <- function(dat){
     mutate(year=dat$year[1])
 }
 
-gapTrendOne <- function(tdat,...){
-  mod <-
-    if(any(is.na(tdat$se))){
-      lm_robust(y~(DEAR+splines::ns(AGEP,5))*year,tdat,weights=ww)
-    } else
-      lm_robust(y~(DEAR+as.factor(AGEP))*year,weights=ww,data=tdat)
-
-  as.data.frame(summary(mod)$coef)['DEAR:year',c(1,2,4)]
-}
-
-gapTrend <- function(nnn,overTimeAge,weightDat,...){
-  ccc <- combineDat(nnn,overTimeAge)
-  tdat <- ccc$tdat
-  if(!is.null(weightDat)){
-    tdat <- full_join(tdat,weightDat)
-  } else
-    tdat$ww <- if(any(is.na(tdat$se))) tdat$Freq else 1/tdat$se^2
-
-  if(length(ccc$subCols)==1) return(gapTrendOne(tdat))
-
-  tdat%>%
-    group_by_at(vars(!! sym(ccc$subCols[2])))%>%
-    group_modify(gapTrendOne)
-}
 
 gapAdjYr <- function(nnn,overTimeAge,weightDat=NULL){
   gaps <- lapply(overTimeAge, function(ota) gapAdj(ota[[nnn]]))
