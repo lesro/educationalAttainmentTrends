@@ -1,6 +1,37 @@
+######################################
+### process year by year estimates
+######################################
+
+
+processEsts <- function(ot,ageDist18){
+    for(i in 1:length(ot)){
+    ### add year as data
+        for(j in 1:length(ot[[i]])){
+            ot[[i]][[j]]$year <- i
+        }
+    ### separate race/sex estimates by sex
+    for(lev in c('hs','cc','bach'))
+        for(sex in 1:2){
+            ot[[i]][[paste0(lev,'Race',c('M','F')[sex])]] <-
+                subset(ot[[i]][[paste0(lev,'RaceSex')]],SEX==sex,select=-SEX)
+        }
+    }
+
+    ## remname se column
+    for(i in 1:length(ot))
+        for(j in 1:length(ot[[i]]))
+            names(ot[[i]][[j]]) <- gsub('se2','se',names(ot[[i]][[j]]))
+
+
+    if(!missing(ageDist18)) attr(ot,'weightDat') <- ageDist18
+
+    ot
+}
 
 
 
+#### combine separate year-by-year sets of estimates into
+### estimates from one set of subgroups
 combineDat <- function(nnn,ot,deaf=NULL){
     tdat <- do.call('rbind', lapply(ot, function(x) x[[nnn]]))
     names(tdat) <- gsub('bach|hs','y',names(tdat))
@@ -32,6 +63,69 @@ combineDat <- function(nnn,ot,deaf=NULL){
     list(tdat=tdat,subCols=subCols,subsets=subsets)
 }
 
+##########################################
+### functions to make tables
+##########################################
+
+
+
+###################
+## functions for attainment trends
+###################
+
+#### makes trend table given combineDat output
+trends <- function(tdat, subCols){
+    trnds <- tdat%>%
+        group_by(!!! lapply(subCo0ls,sym))%>%
+            group_modify(estTrend1)
+
+    trnds$subgroup <- if(length(subCols)==1) "Overall" else trnds[[subCols[2]]]
+
+    trnds
+}
+
+### estimate the trend
+estTrend1 <- function(ddd,...){
+    form <- y~year+as.factor(AGEP)
+    trnd <- summary(lm_robust(form,data=ddd,weights=ww))$coef['year',]
+    if(is.nan(trnd['Std. Error']))
+        trnd <- summary(lm_robust(form,data=ddd,weights=ww,se_type='HC1'))$coef['year',]
+    as.data.frame(rbind(trnd))
+}
+
+###################
+## functions for gap trends
+###################
+
+### estimate one gap trend
+gapTrendOne <- function(tdat,...){
+  mod <-
+    if(any(is.na(tdat$se))){
+      lm_robust(y~(DEAR+splines::ns(AGEP,5))*year,tdat,weights=ww)
+    } else
+      lm_robust(y~(DEAR+as.factor(AGEP))*year,weights=ww,data=tdat)
+
+  as.data.frame(summary(mod)$coef)['DEAR:year',c(1,2,4)]
+}
+
+### estimate gap trend for one set of subgroups, given combineDat output
+gapTrend <- function(tdat,subCols,...){
+    gaps <-
+        if(length(subCols)==1){
+            gapTrendOne(tdat)
+        } else
+            tdat%>%
+                group_by_at(vars(!! sym(subCols[2])))%>%
+                    group_modify(gapTrendOne)
+    gaps$subgroup <- if(length(subCols)==1) "Overall" else gaps[[subCols[2]]]
+    gaps
+}
+
+###################
+## functions to compute all tables and put them together
+###################
+
+### regression output -> estimate (se)
 tabClean <- function(.data,name,digits=2){
     rnd <- function(x) sprintf(paste0('%.',digits,'f'),x)
     if(!'DEAR'%in%names(.data)) .data$DEAR <- 1
@@ -45,6 +139,7 @@ tabClean <- function(.data,name,digits=2){
            )#%>%dplyr::select(SUB,everything())
 }
 
+### makes table for trend or gap for one subgroup/level combination
 trendTab1 <- function(lev,SUB,ot,trendOrGap=c('trend','gap'),digits=2){
     fun <- switch(trendOrGap,trend=trends,gap=gapTrend)
     out <- combineDat(paste0(lev,SUB),ot)%$%
@@ -57,58 +152,15 @@ trendTab1 <- function(lev,SUB,ot,trendOrGap=c('trend','gap'),digits=2){
     out
 }
 
-trends <- function(tdat, subCols){
-
-
-    trnds <- tdat%>%
-        group_by(!!! lapply(subCo0ls,sym))%>%
-            group_modify(estTrend1)
-
-    trnds$subgroup <- if(length(subCols)==1) "Overall" else trnds[[subCols[2]]]
-
-    trnds
-}
-
-
-estTrend1 <- function(ddd,...){
-    form <- y~year+as.factor(AGEP)
-    trnd <- summary(lm_robust(form,data=ddd,weights=ww))$coef['year',]
-    if(is.nan(trnd['Std. Error']))
-        trnd <- summary(lm_robust(form,data=ddd,weights=ww,se_type='HC1'))$coef['year',]
-    as.data.frame(rbind(trnd))
-}
-
-gapTrendOne <- function(tdat,...){
-  mod <-
-    if(any(is.na(tdat$se))){
-      lm_robust(y~(DEAR+splines::ns(AGEP,5))*year,tdat,weights=ww)
-    } else
-      lm_robust(y~(DEAR+as.factor(AGEP))*year,weights=ww,data=tdat)
-
-  as.data.frame(summary(mod)$coef)['DEAR:year',c(1,2,4)]
-}
-
-gapTrend <- function(tdat,subCols,...){
-    gaps <-
-        if(length(subCols)==1){
-            gapTrendOne(tdat)
-        } else
-            tdat%>%
-                group_by_at(vars(!! sym(subCols[2])))%>%
-                    group_modify(gapTrendOne)
-    gaps$subgroup <- if(length(subCols)==1) "Overall" else gaps[[subCols[2]]]
-    gaps
-}
-
-
-
+### p-value stars
 stars <- function(pval)
     ifelse(pval<0.001,'***',
            ifelse(pval<0.01,'**',
                   ifelse(pval<0.05,'*',
                          ifelse(pval<0.1,'.',''))))
 
-
+### put together tables for all sets of subgroups, levels, attainment or gap.
+### does multiplicity adjustment, returns list of tables for 3 levels
 tabsFun <- function(ot, trendOrGap=c('trend','gap'),
                      subs=c('Tot','ByAgeCat','Sex','Race','RaceM','RaceF'),
                      onlyDeaf=TRUE,digits=2){
@@ -144,7 +196,7 @@ tabsFun <- function(ot, trendOrGap=c('trend','gap'),
 
 }
 
-
+#### makes all the trend tables
 allTabs <- function(overTimeAge,
                     subs=c('Tot','ByAgeCat','Sex','Race','RaceM','RaceF'),
                     onlyDeaf=TRUE,digits=2){
@@ -159,6 +211,60 @@ allTabs <- function(overTimeAge,
            simplify=FALSE
            )
 }
+
+##########################################
+### functions to make plots
+##########################################
+
+### for each level, four plots: overall, 25-34, by sex, by race/eth
+
+figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
+
+    dd <- map_dfr(subs, function(ss){
+                ccc <- combineDat(paste0(lev,ss),ot)
+                tdat <- ccc$tdat
+                if(ss=='Race') tdat$raceEth <-
+                    c(`African American`="Afr. Am.", `American Indian`="Nat. Am.",  `Asian/PacIsl`="Asn/PacIsl", `Hispanic`="Hisp.",  `Other`="Other", `White`="White")[tdat$raceEth]
+                if(ss%in%c('Tot','ByAgeCat')) tdat$subgroup=' ' else names(tdat)[2] <- 'subgroup'
+                if(ss=='ByAgeCat') tdat <- subset(tdat,ageRange=='25-34')
+                tdat$SUB <- switch(ss,
+                                   Tot='Overall',
+                                   ByAgeCat='Age 25-34',
+                                   Sex='By Gender',
+                                   Race='By Race/Ethnicity'
+                                   )
+                tdat$lab <- ifelse(tdat$DEAR==1,tdat$subgroup,paste0(tdat$subgroup,' '))
+                tdat$deaf <- ifelse(tdat$DEAR==1,'Deaf','Hearing')
+                tdat
+            })#%>%
+        dd$SUB=factor(dd$SUB,levels=unique(dd$SUB))#)%>%
+        ggplot(dd,aes(year,y,linetype=deaf,group=lab,label=lab))+
+            geom_line()+geom_point(size=0.5)+
+                scale_x_continuous(
+                    breaks=1:11,
+                    minor_breaks=NULL,
+                    labels=c(2008:2018),
+                    limits=c(1,13)
+                    )+
+                geom_dl(method=list("last.qp",cex=0.5))+
+                scale_y_continuous(labels=function(x) paste0(x,'%'))+
+                facet_wrap(~SUB,ncol=2)+
+                labs(
+                    x=NULL,
+                    y=paste('% Attaining', switch(lev, hs='High School',cc='Associates',bach='Bachelors'),'Degree or Higher'),
+                    linetype=NULL
+                    )+
+                    theme(legend.position='top',legend.margin=margin(t=0,b=-.3,unit='cm'),
+                        axis.text.x = element_text(angle = 90,hjust = 1, vjust = 0.5))
+}
+
+
+
+
+
+
+
+
 
 
 
@@ -329,47 +435,7 @@ diffFun <- function(ests,ses,moe,diffStars=''){
 
 
 
-figFun <- function(nnn,ot,chg=FALSE,erbr=FALSE,...){
-    cccD <- combineDat(nnn,ot,deaf=TRUE)
-    cccH <- combineDat(nnn,ot,deaf=FALSE)
 
-    ccc <- rbind(cccD$tdat,cccH$tdat)
-    ccc$deaf <- rep(c('Deaf','Hearing'),each=nrow(cccD$tdat))
-
-    if(chg){
-        ccc$y <- ccc$y*1
-        ccc$se <- ccc$se*1
-    }
-
-    ccc$Year <- ccc$year+2007
-
-    change <- NULL
-    for(i in 1:nrow(ccc)){
-        cls <- ccc$deaf==ccc$deaf[i]
-        for(s in cccD$subCols)
-            cls <- cls& ccc[[s]]==ccc[[s]][i]
-        change[i] <- ccc$y[i]-ccc$y[ccc$Year==2008 & cls]
-    }
-    if(chg) ccc$y <- change
-    if(length(cccD$subCols)==0){
-        out <- ggplot(ccc,aes(Year,y,shape=deaf,linetype=deaf))+geom_point()+geom_line()
-    } else if(length(cccD$subCols)==1){
-        names(ccc)[1] <- 'sub'
-        out <- ggplot(ccc,aes(Year,y,color=sub,shape=deaf,linetype=deaf))+geom_point()+geom_line()
-    } else{
-        names(ccc)[1:2] <- if(length(unique(ccc[,1]))>=length(unique(ccc[,2])))  c('sub2','sub1') else c('sub1','sub2')
-        out <- ggplot(ccc,aes(Year,y,color=sub2,shape=deaf,linetype=deaf))+geom_point(position='dodge')+geom_line()+facet_grid(~sub1)
-    }
-    if(chg)
-        out <- out+ geom_hline(yintercept=0,linetype=2)+ylab('Change Since 2008 (Percentage Points)')
-
-    if(!chg) out <- out+scale_y_continuous(labels=function(bb) paste0(bb,'%'))
-
-    if(erbr) out <- out+geom_errorbar(aes(ymin=y-1.96*se,ymax=y+1.96*se,width=0.2),position='dodge')
-    out+scale_x_continuous(breaks=unique(ccc$Year))+
-        labs(x=NULL,color='',shape='',linetype='')+
-        theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust=0.5))
-}
 
 
 
