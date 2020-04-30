@@ -224,7 +224,7 @@ figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
                 ccc <- combineDat(paste0(lev,ss),ot)
                 tdat <- ccc$tdat
                 if(ss=='Race') tdat$raceEth <-
-                    c(`African American`="Afr. Am.", `American Indian`="Nat. Am.",  `Asian/PacIsl`="Asn/PacIsl", `Hispanic`="Hisp.",  `Other`="Other", `White`="White")[tdat$raceEth]
+                    c(`African American`="Afr. Am.", `American Indian`="Am. Ind.",  `Asian/PacIsl`="Asn/PacIsl", `Hispanic`="Latinx",  `Other`="Other", `White`="White")[tdat$raceEth]
                 if(ss%in%c('Tot','ByAgeCat')) tdat$subgroup=' ' else names(tdat)[2] <- 'subgroup'
                 if(ss=='ByAgeCat') tdat <- subset(tdat,ageRange=='25-34')
                 tdat$SUB <- switch(ss,

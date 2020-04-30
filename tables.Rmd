@@ -9,61 +9,17 @@ always_allow_html: true
 
 
 ```{r,echo=FALSE,cache=FALSE,include=FALSE}
-library(magrittr)
-library(estimatr)
-library(tidyverse)
-library(flextable)
-library(officer)
-select <- dplyr::select
-source('R/trends.r')
-
 
 load('output/estByYear.RData')
-
-### some more processing of results
-for(i in 1:length(overTime)){
-    ### add year as data
-    for(j in 1:length(overTime[[i]])){
-        overTime[[i]][[j]]$year <- i
-    }
-    for(j in 1:length(overTimeAge[[i]])){
-        overTimeAge[[i]][[j]]$year <- i
-    }
-    ### separate race/sex estimates by sex
-    for(lev in c('hs','cc','bach'))
-        for(sex in 1:2){
-            overTime[[i]][[paste0(lev,'Race',c('M','F')[sex])]] <-
-                subset(overTime[[i]][[paste0(lev,'RaceSex')]],SEX==sex,select=-SEX)
-            overTimeAge[[i]][[paste0(lev,'Race',c('M','F')[sex])]] <-
-                subset(overTimeAge[[i]][[paste0(lev,'RaceSex')]],SEX==sex,select=-SEX)
-        }
-
-    ### estimates for ages 25-29
-    overTime[[i]]$hs25.29 <- overTime[[i]]$hs25.29[-grep('FALSE',rownames(overTime[[i]]$hs25.29)),]
-    overTime[[i]]$bach25.29 <- overTime[[i]]$bach25.29[-grep('FALSE',rownames(overTime[[i]]$bach25.29)),]
-    overTime[[i]]$hs25.29[['I(AGEP < 30)']] <- overTime[[i]]$bach25.29[['I(AGEP < 30)']] <- NULL
-
-}
-
-## remname se column
-for(i in 1:length(overTime))
-  for(j in 1:length(overTime[[i]]))
-    names(overTime[[i]][[j]]) <- gsub('se2','se',names(overTime[[i]][[j]]))
-
-for(i in 1:length(overTimeAge))
-  for(j in 1:length(overTimeAge[[i]]))
-    names(overTimeAge[[i]][[j]]) <- gsub('se2','se',names(overTimeAge[[i]][[j]]))
-
-## add 2018 age distribution for weighting regressions
 load('output/ageDist18.RData')
-attr(overTimeAge,'weightDat') <- ageDist18
 
+overTimeAge <- processEsts(overTimeAge,ageDist18)
 
 ### estimate trends
 
-subs <- c('Tot',#'25.29',
+subs <- c('Tot',
           'ByAgeCat',
-          'Sex','Race','RaceM','RaceF')#,'RaceSex')
+          'Sex','Race','RaceM','RaceF')
 
 tables <- allTabs(overTimeAge,onlyDeaf=FALSE)
 
