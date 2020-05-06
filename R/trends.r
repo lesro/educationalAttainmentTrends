@@ -76,7 +76,7 @@ combineDat <- function(nnn,ot,deaf=NULL){
 #### makes trend table given combineDat output
 trends <- function(tdat, subCols){
     trnds <- tdat%>%
-        group_by(!!! lapply(subCo0ls,sym))%>%
+        group_by(!!! lapply(subCols,sym))%>%
             group_modify(estTrend1)
 
     trnds$subgroup <- if(length(subCols)==1) "Overall" else trnds[[subCols[2]]]

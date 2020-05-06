@@ -21,7 +21,7 @@ subs <- c('Tot',
           'ByAgeCat',
           'Sex','Race','RaceM','RaceF')
 
-tables <- allTabs(overTimeAge,onlyDeaf=FALSE)
+tables <- allTabs(overTimeAge,onlyDeaf=TRUE)
 
 ```
 High School
