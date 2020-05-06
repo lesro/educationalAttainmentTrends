@@ -233,12 +233,14 @@ figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
                                    Sex='By Gender',
                                    Race='By Race/Ethnicity'
                                    )
-                tdat$lab <- ifelse(tdat$DEAR==1,tdat$subgroup,paste0(tdat$subgroup,' '))
+                #tdat$lab <- ifelse(tdat$DEAR==1,tdat$subgroup,paste0(tdat$subgroup,' '))
+                tdat$lab <- ifelse(tdat$year==11,tdat$subgroup,'')
+                tdat$grp <- paste(tdat$DEAR,tdat$subgroup)
                 tdat$deaf <- ifelse(tdat$DEAR==1,'Deaf','Hearing')
                 tdat
             })#%>%
         dd$SUB=factor(dd$SUB,levels=unique(dd$SUB))#)%>%
-        ggplot(dd,aes(year,y,linetype=deaf,group=lab,label=lab))+
+        ggplot(dd,aes(year,y,linetype=deaf,group=grp,label=lab))+
             geom_line()+geom_point(size=0.5)+
                 scale_x_continuous(
                     breaks=1:11,
@@ -246,7 +248,8 @@ figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
                     labels=c(2008:2018),
                     limits=c(1,13)
                     )+
-                geom_dl(method=list("last.qp",cex=0.5))+
+                #geom_dl(method=list("last.qp",cex=0.5))+
+                geom_text_repel(size=2,force=0.25,min.segment.length=0.25,segment.size=0.5)+
                 scale_y_continuous(labels=function(x) paste0(x,'%'))+
                 facet_wrap(~SUB,ncol=2)+
                 labs(
