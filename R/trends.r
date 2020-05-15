@@ -18,10 +18,15 @@ processEsts <- function(ot,ageDist18){
     }
 
     ## remname se column
-    for(i in 1:length(ot))
-        for(j in 1:length(ot[[i]]))
+    for(i in 1:length(ot)){
+        for(j in 1:length(ot[[i]])){
             names(ot[[i]][[j]]) <- gsub('se2','se',names(ot[[i]][[j]]))
-
+            if('raceEth'%in%names(ot[[i]][[j]])){
+                ot[[i]][[j]]$raceEth <- gsub('Hispanic','Latinx',ot[[i]][[j]]$raceEth)
+                #ot[[i]][[j]]$raceEth <- gsub(' ',' ',ot[[i]][[j]]$raceEth)
+            }
+        }
+    }
 
     if(!missing(ageDist18)) attr(ot,'weightDat') <- ageDist18
 
@@ -63,11 +68,45 @@ combineDat <- function(nnn,ot,deaf=NULL){
     list(tdat=tdat,subCols=subCols,subsets=subsets)
 }
 
+
+
+
+
 ##########################################
 ### functions to make tables
 ##########################################
 
+###################
+## functions for attainment rates
+###################
+getRates <- function(nnn,ot,years=c('08','18'),digits=2){
+    rnd <- function(x) sprintf(paste0('%.',digits,'f'),x)
+    tab <- map_dfr(years,function(y)
+        ot[[y]][[nnn]]%>%
+            mutate(
+                rate=paste0(rnd(`I(attain >= edLev)TRUE`),' (',rnd(se),')'),
+                year=paste0('20',y)
+                )%>%
+            select(-`I(attain >= edLev)TRUE`,-se,-Freq)
+                   )%>%
+        tidyr::pivot_wider(names_from=year,values_from=rate)
+    if('SEX'%in%names(tab)) tab$SEX <- c('Male','Female')[tab$SEX]
+    if(endsWith(nnn,'Tot')){
+        tab <- mutate(tab,subgroup='Overall')%>%select(DEAR,subgroup,everything())
+    } else names(tab)[2] <- 'subgroup'
 
+    tab
+}
+
+ratesTab <- function(lev,subs,ot,years,digits,onlyDeaf){
+    tab <- map_dfr(subs,function(ss)
+                       getRates(paste0(lev,ss),ot=ot,years=years,digits=digits)%>%
+                       filter(!subgroup%in%c('35-44','45-54','55-64'))%>%
+                       mutate(SUB=ss)
+                   )
+    if(onlyDeaf) tab <- filter(tab,DEAR==1)%>%select(-DEAR)
+    tab
+}
 
 ###################
 ## functions for attainment trends
@@ -91,6 +130,12 @@ estTrend1 <- function(ddd,...){
     if(is.nan(trnd['Std. Error']))
         trnd <- summary(lm_robust(form,data=ddd,weights=ww,se_type='HC1'))$coef['year',]
     as.data.frame(rbind(trnd))
+}
+
+trendRegressionTab <- function(ddd,...){
+  form <- y~year+as.factor(AGEP)
+  trnd <- lm_robust(form,data=ddd,weights=ww)
+trnd
 }
 
 ###################
@@ -145,10 +190,10 @@ trendTab1 <- function(lev,SUB,ot,trendOrGap=c('trend','gap'),digits=2){
     out <- combineDat(paste0(lev,SUB),ot)%$%
         fun(tdat,subCols)%>%
             tabClean(trendOrGap,digits=digits)
-    if(SUB=='RaceF') out$subgroup <- paste(out$subgroup,'F')
-    if(SUB=='RaceM') out$subgroup <- paste(out$subgroup,'M')
+    #if(SUB=='RaceF') out$subgroup <- paste(out$subgroup,'F')
+    #if(SUB=='RaceM') out$subgroup <- paste(out$subgroup,'M')
     if(SUB=='ByAgeCat') out <- filter(out,subgroup=='25-34')
-    out$SUB <- switch(SUB,Tot="",ByAgeCat="",Sex="Sex",Race="Race/Ethnicity",RaceM="Race/Ethnicity: Male",RaceF="Race/Ethnicity: Female")
+    out$SUB <- SUB
     out
 }
 
@@ -197,20 +242,32 @@ tabsFun <- function(ot, trendOrGap=c('trend','gap'),
 }
 
 #### makes all the trend tables
-allTabs <- function(overTimeAge,
+allTabs <- function(overTimeAge,overTime,
                     subs=c('Tot','ByAgeCat','Sex','Race','RaceM','RaceF'),
-                    onlyDeaf=TRUE,digits=2){
+                    onlyDeaf=TRUE,digits=2,years=c('08','18')){
 
     tabs <- sapply(c('trend','gap'),
                 function(x) tabsFun(overTimeAge,trendOrGap=x,subs=subs,onlyDeaf=onlyDeaf,digits=digits),
                    simplify=FALSE)
 
+    rates <- sapply(c('hs','cc','bach'),ratesTab,
+                    subs=subs,ot=overTime,years=years,digits=digits,onlyDeaf=onlyDeaf,
+                    simplify=FALSE)
+
+
     sapply(c('hs','cc','bach'),
-           function(x) full_join(tabs$trend[[x]],tabs$gap[[x]])%>%
-              rename(`Trend in Deaf Attainment`=trend,`Trend in Deaf-Hearing Gap`=gap),
+           function(x)
+              full_join(rates[[x]],tabs$trend[[x]])%>%
+              full_join(tabs$gap[[x]])%>%
+              rename(`Deaf\nAttainment`=trend,`Deaf-Hearing\nGap`=gap)%>%
+              select(SUB,subgroup,everything())%>%
+              arrange(match(SUB,subs))%>%
+              mutate(SUB=c(Tot="",ByAgeCat="",Sex="Sex",Race="Race/\nEthnicity",RaceM="Race/\nEthnicity:\nMale",RaceF="Race/\nEthnicity:\nFemale")[SUB]),
            simplify=FALSE
            )
-}
+  }
+
+
 
 ##########################################
 ### functions to make plots
@@ -224,7 +281,7 @@ figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
                 ccc <- combineDat(paste0(lev,ss),ot)
                 tdat <- ccc$tdat
                 if(ss=='Race') tdat$raceEth <-
-                    c(`African American`="Afr. Am.", `American Indian`="Am. Ind.",  `Asian/PacIsl`="Asn/PacIsl", `Hispanic`="Latinx",  `Other`="Other", `White`="White")[tdat$raceEth]
+                    c(`African American`="Afr. Am.", `American Indian`="Am. Ind.",  `Asian/PacIsl`="Asn/PacIsl", `Latinx`="Latinx",  `Other`="Other", `White`="White")[tdat$raceEth]
                 if(ss%in%c('Tot','ByAgeCat')) tdat$subgroup=' ' else names(tdat)[2] <- 'subgroup'
                 if(ss=='ByAgeCat') tdat <- subset(tdat,ageRange=='25-34')
                 tdat$SUB <- switch(ss,
@@ -253,19 +310,133 @@ figFun <- function(lev,ot,subs=c('Tot','ByAgeCat','Sex','Race')){
                 scale_y_continuous(labels=function(x) paste0(x,'%'))+
                 facet_wrap(~SUB,ncol=2)+
                 labs(
+                  title=paste("Figure", switch(lev,hs=1,cc=2,bach=3)),
+                  subtitle=(paste(switch(lev, hs='High School',cc='Associates',bach='Bachelors'),'Degree Attainment, 2008-2018')),
                     x=NULL,
                     y=paste('% Attaining', switch(lev, hs='High School',cc='Associates',bach='Bachelors'),'Degree or Higher'),
                     linetype=NULL
                     )+
-                    theme(legend.position='top',legend.margin=margin(t=0,b=-.3,unit='cm'),
-                        axis.text.x = element_text(angle = 90,hjust = 1, vjust = 0.5))
+                    theme(legend.position='bottom',legend.margin=margin(t=0,b=-.3,unit='cm'),
+                        axis.text.x = element_text(angle = 90,hjust = 1, vjust = 0.5),
+                          plot.title = element_text(face = "bold"),
+                          plot.subtitle=element_text(face="italic"))
 }
 
 
 
+##########################################
+### results text functions
+##########################################
+
+############
+### results table
+############
+pfun <- function(p)
+  ifelse(p>=0.01,paste0("p=",sprintf("%.2f",p)),
+         ifelse(p>0.001,"p<0.01","p<0.001"))
 
 
 
+tab1 <- function(lev,SUB,what,ot=if(what=='lev') overTime else overTimeAge,deaf=what!="gap",digits=2,tab=FALSE){
+
+  fun <- switch(what,trend=trends,gap=gapTrend,lev=levs)
+  out <- combineDat(paste0(lev,SUB),ot)%$%
+    fun(tdat,subCols)
+  if(deaf) out <- filter(out,DEAR==1)
+
+  if(tab) return(out)
+
+  if("Estimate"%in%names(out))
+    out <- out%>%
+      arrange(desc(Estimate))%>%
+        mutate(Estimate=round(Estimate,2))
+  if("y2008" %in% names(out))
+    out <- mutate_at(out,vars(starts_with("y")),~paste0(round(.,digits=1),'%'))
+
+
+  if(SUB=='ByAgeCat') out <- filter(out,ageRange=='25-34')
+
+  if("Pr(>|t|)"%in%names(out)) out <- mutate(out,pval=pfun(`Pr(>|t|)`))
+
+  out <- as.data.frame(out)
+
+  if(n_distinct(out[,2])==nrow(out)) rownames(out) <- out[,2]
+
+  out
+}
+
+
+
+levs <- function(tdat,subCols){
+  tdat%>%
+    filter(year%in%c(1,11))%>%
+    mutate(year=2007+year)%>%
+    select(!!!syms(subCols),y,se,year)%>%
+    pivot_wider(names_from='year',values_from=c("y","se"),names_sep='')
+}
+
+interactionTest <- function(out){
+  w <- 1/out$`Std. Error`^2
+  T <- sum(w*out$Estimate)/sum(w)
+  Q <- sum(w*(out$Estimate-T)^2)
+  pchisq(Q,length(w)-1,lower.tail=FALSE)
+}
+
+pval <- function(top,bottom)
+    2*pnorm(as.numeric(-abs(top/bottom)))
+
+diffP <- function(ests,ses){
+    est <- ests[2]-ests[1]
+    se <- sqrt(ses[2]^2+ses[1]^2)
+    pval(est,se)
+  }
+
+pairWise <- function(out,groupName=names(out)[2]){
+  out <- out%>%arrange(desc(Estimate))
+  pvals <- NULL
+  for(i in 1:(nrow(out)-1))
+    for(j in (i+1):nrow(out))
+      pvals <- c(pvals,
+                 setNames(
+                   diffP(out$Estimate[c(i,j)],out$`Std. Error`[c(i,j)]),
+                   paste0(out[i,groupName],'>',out[j,groupName])
+                   )
+                 )
+  #p.adjust(pvals,'hommel')
+  pvals
+}
+
+totTest1 <- function(lev,SUB,what,ot=overTimeAge){
+  if(SUB%in%c('Sex','Race')){
+    out <- tab1(lev=lev,SUB=SUB,what=what,ot=ot,tab=TRUE)
+    if(nrow(out)==1) return(NULL)
+    if(nrow(out)==2) pvals <- c(sex=diffP(out$Estimate,out$`Std. Error`)) else
+    pvals <- c(overall=interactionTest(out),pairWise(out))
+  } else
+    pvals <- bind_rows(
+      tab1(lev,'RaceM',what)%>%mutate(sex=paste0(raceEth,'M')),
+      tab1(lev,'RaceF',what)%>%mutate(sex=paste0(raceEth,'F'))
+    )%>%
+    group_by(raceEth)%>%group_map(~pairWise(.,groupName='sex'))%>%do.call('c',.)
+  data.frame(levs=lev,subs=SUB,what=what,test=names(pvals),pvals=pvals)
+}
+
+totTest <- function(overTimeAge,levs=c('hs','cc','bach'),subs=c('Sex','Race','RaceSex'),what=c('trend','gap')){
+  tab <- expand.grid(levs=levs,subs=subs,what=what,stringsAsFactors=FALSE)
+  pvals <- map_dfr(1:nrow(tab),~totTest1(tab$levs[.],tab$subs[.],tab$what[.],overTimeAge))
+  pvals$pvals[pvals$test=='overall'] <- p.adjust(pvals$pvals[pvals$test=='overall'],'holm')
+
+  pvals <- pvals%>%
+    group_by(levs,subs,what)%>%
+    mutate(
+      overall=ifelse('overall'%in%test,pvals[test=='overall']<0.05,TRUE)
+      )%>%
+      ungroup()
+  pvals$overall[pvals$test=='overall'] <- FALSE
+  pvals$pvals[pvals$overall] <- p.adjust(pvals$pvals[pvals$overall],'fdr')
+  pvals$pvals[!pvals$overall&pvals$test!='overall'] <- 1
+  pvals
+}
 
 
 
@@ -416,14 +587,7 @@ tabFinish <- function(anal1,deaf=NULL,moe=TRUE){ #ests,ses,moe,strs){
     tab
 }
 
-pval <- function(top,bottom)
-    2*pnorm(as.numeric(-abs(top/bottom)))
 
-diffP <- function(ests,ses){
-    est <- ests[2]-ests[1]
-    se <- sqrt(ses[2]^2+ses[1]^2)
-    pval(est,se)
-}
 
 diffFun <- function(ests,ses,moe,diffStars=''){
     est <- ests[1]-ests[2]
