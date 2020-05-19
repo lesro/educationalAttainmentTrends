@@ -1,6 +1,4 @@
 ---
-title: "Trends in Educational Attainment"
-date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output:
   word_document:
     reference_docx: style.docx
@@ -8,41 +6,110 @@ always_allow_html: true
 ---
 
 
-```{r,echo=FALSE,cache=FALSE,include=FALSE}
+```{r,echo=FALSE,cache=TRUE,include=FALSE}
+
+library(magrittr)
+library(estimatr)
+library(tidyverse)
+library(flextable)
+library(officer)
+###library(directlabels)
+library(ggrepel)
+library(knitr)
+library(rmarkdown)
+select <- dplyr::select
+source('R/trends.r')
 
 load('output/estByYear.RData')
 load('output/ageDist18.RData')
 
 overTimeAge <- processEsts(overTimeAge,ageDist18)
 
+overTime <- processEsts(overTime)
+
 ### estimate trends
 
 subs <- c('Tot',
           'ByAgeCat',
-          'Sex','Race','RaceM','RaceF')
+          'Sex','Race','RaceM','RaceF')%>%
+  setNames(.,.)
 
-tables <- allTabs(overTimeAge,onlyDeaf=TRUE)
+tables <- allTabs(overTimeAge, overTime,onlyDeaf=TRUE,digits=1)
+
+printTab <- function(tab)#,level)
+    tab%>%
+    flextable()%>%
+    set_header_labels(SUB='Grouping',subgroup='Subgroup')%>%
+    border_remove()%>%
+    merge_v(j='SUB')%>%
+    hline_bottom(part='header',border=fp_border(width=2))%>%
+    hline(i=c(2,4,10,16),border=fp_border())%>%
+    add_header_row(top=TRUE ,c("","Rates\n(%)","Trends\n(Percentage Points/Year)"),colwidths=c(2,2,2))%>%
+    align(align='center',part='header')%>%
+    align(j=1:2,align='right',part='all')%>%
+    align(j=3:6,align='left',part='body')%>%
+    #fontsize(size=12,part='header')%>%
+      #add_footer_lines(paste("_note:_ Rates and trends refer to the percentage of people who have attained at least a",level,"Degree. Standard errors are in parentheses. All results were computed from the ACS PUMS single year data, with person weights. Standard errors for attainment rates were computed with the successive difference replication method using the person replication weights provided with the PUMS. Standard errors for trends are HC2 standard errors from the regressions described in the text."))%>%
+    #merge_at(j=1:6,part='footer')%>%
+    ## add_footer(SUB="*p < .05. **p < .01. ***p < .001 (corrected for multiplicity)")%>%
+    ## merge_at(i=2,j=1:6,part='footer')%>%
+    autofit(add_w=0)%>%
+    #padding(padding=0,part='all')%>%
+    #fit_to_width(8.5)%>%
+    height(height=.5,part='header')
 
 ```
-High School
-```{r hs, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE}
-tables$hs%>%select(SUB,everything())%>%flextable()%>%theme_booktabs()%>%merge_v(j='SUB')%>%hline(i=c(2,4,10,16),border=fp_border())%>%autofit()
+```{r makeFigures, include=FALSE,cache=TRUE}
+for(lev in c('hs','cc','bach')){
+    figFun(lev,overTime)
+    ggsave(paste0('figures/',lev,'.png'),width=6.4,height=6)
+}
+```
 
+\newline
+
+
+
+**Table 1**
+
+\newline
+
+_Deaf High School Completion from 2008 to 2018_
+```{r hs, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE,cache=FALSE}
+printTab(tables$hs)
+```
+_Note:_ Rates and trends refer to the percentage of people who have
+attained at least a high school degree. Standard errors are in
+parentheses. All results were computed from the ACS PUMS single year
+data, with person weights. Standard errors for attainment rates were
+computed with the successive difference replication method using the
+person replication weights provided with the PUMS. Standard errors for
+trends are HC2 standard errors from the regressions described in the
+text.
+
+*p < .05. \*\*p < .01. \*\*\*p < .001 (corrected for multiplicity)
+
+##### page break
+
+**Table 2**
+
+\newline
+
+_Deaf Associate Degree Attainment from 2008 to 2018_
+```{r cc, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE,cache=FALSE}
+printTab(tables$cc)
 
 ```
 
 ##### page break
 
-## Associates
-```{r cc, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE}
-tables$cc%>%select(SUB,everything())%>%flextable()%>%theme_booktabs()%>%merge_v(j='SUB')%>%hline(i=c(2,4,10,16),border=fp_border())%>%autofit()
+**Table 3**
+
+\newline
+
+_Deaf Bachelors' Completion from 2008 to 2018_
+```{r ba, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE,cache=FALSE}
+printTab(tables$bach)
 
 ```
 
-##### page break
-
-## Bachelors
-```{r ba, results='asis',warning=FALSE,message=FALSE,error=FALSE,echo=FALSE}
-tables$bach%>%select(SUB,everything())%>%flextable()%>%theme_booktabs()%>%merge_v(j='SUB')%>%hline(i=c(2,4,10,16),border=fp_border())%>%autofit()
-
-```
