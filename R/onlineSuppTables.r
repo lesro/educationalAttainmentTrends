@@ -125,7 +125,9 @@ cat('\\end{document}')
 
 setwd('tables')
 fff <- list.files()
-for(f in fff[endsWith(fff,'.tex')])
+for(f in fff[endsWith(fff,'.tex')]){
   system(paste0('pdflatex "',f,'"'))
+  system(paste0('pdflatex "',f,'"'))
+}
 setwd('..')
 

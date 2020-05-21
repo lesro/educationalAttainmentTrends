@@ -219,9 +219,11 @@ gapTrendMod <- function(nnn,overTimeAge,weightDat){
 
   if(length(ccc$subCols)==1) return(gapTrendOne(tdat,returnMod=TRUE))
 
+  grp <- ccc$subCols[2]
+
   tdat%>%
-    group_by_at(vars(!! sym(ccc$subCols[2])))%>%
-      group_map(gapTrendOne,returnMod=TRUE,keep=TRUE)
+    group_by_at(vars(!! sym(grp)))%>%
+      group_map(~{x <- gapTrendOne(.,returnMod=TRUE); x$modName=.[[grp]][1]; x},keep=TRUE)
 }
 
 gapAdjYr <- function(nnn,overTimeAge,weightDat=NULL){
@@ -302,7 +304,7 @@ attRegTab <- function(nnn,overTimeAge,weightDat){
 gapRegTab <- function(nnn,overTimeAge,weightDat){
   mods <- gapTrendMod(nnn=nnn,overTimeAge,weightDat=weightDat)
 
-  mods <-  map(names(mods)%>%setNames(.,.),function(x) {mods[[x]]$modName <- x;mods[[x]]})
+  #mods <-  map(names(mods)%>%setNames(.,.),function(x) {mods[[x]]$modName <- x;mods[[x]]})
 
-  map(mods,function(x) map(x,makeObj))
+  map(mods,makeObj)
 }
