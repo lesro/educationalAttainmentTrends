@@ -65,7 +65,7 @@ sampSize <- function(des){
 
 yearInfo <- function(year,des){
     print(year)
-    if(missing(des)) load(paste0('../../data/byYear/design',year,'.RData'))
+    if(missing(des)) load(paste0(DIR,'design',year,'.RData'))
     des <- subset(des,AGEP>24 & AGEP<65) ## changed this to change age range
 #    des <- update(des,raceEth=ifelse(raceEth%in%c('American Indian','Asian/PacIsl'),'Other',raceEth))
 

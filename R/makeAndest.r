@@ -3,6 +3,9 @@ source('estByYear.r')
 
 overTimeTot <- list()
 
+### set this to wherever you saved the csv files
+dataFolder <- "../../data/byYear/"
+
 for(year in c('08','09','10','11','12','13','14','15','16','17','18')){
     start <- proc.time()
     des <- makeDes(year)
@@ -10,7 +13,7 @@ for(year in c('08','09','10','11','12','13','14','15','16','17','18')){
     print(proc.time()-start)
 
     des <- prepDes(des)
-    save(des,file=paste0('../../data/byYear/design',year,'.RData'))
+    save(des,file=paste0(dataFolder,'design',year,'.RData'))
 
     overTimeTot[[year]] <- yearInfo(year,des)
 
