@@ -15,6 +15,20 @@ source('R/trends.r')
 ##### estimate year-by-year attainment rates
 # source('R/makeAndest.r')
 
+
+
+load('output/estByYear.RData')
+load('output/ageDist18.RData')
+
+overTimeAge <- processEsts(overTimeAge,ageDist18)
+
+overTime <- processEsts(overTime)
+
+subs <- c('Tot',
+          'ByAgeCat',
+          'Sex','Race','RaceM','RaceF')
+
+
 ##### make tables
 render('tables.Rmd')
 
