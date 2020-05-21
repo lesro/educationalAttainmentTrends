@@ -6,6 +6,7 @@ To replicate:
   - 1-year files
 		- years 2008-2018
 		- save all CSV files in the same folder, with names ss[YR]pusa.csv or ss[YR]pusb.csv e.g. ss08pusa.csv
+
 - Install packages in `R`:
   - magrittr
   - estimatr
@@ -16,6 +17,7 @@ To replicate:
   - knitr
   - rmarkdown
 		- survey
+
 - Modify "dataFolder" from R/makeAndest.r
 - Run `source('R/makeAndest.r')`
 - To replicate tables and figures from the paper (modulo a small bit of formatting): run `rmarkdown::render('tables.Rmd')`
