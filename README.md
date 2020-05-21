@@ -4,8 +4,8 @@ To replicate:
 
 - Download CSV files from https://www2.census.gov/programs-surveys/acs/data/pums/
   - 1-year files
-		- years 2008-2018
-		- save all CSV files in the same folder, with names ss[YR]pusa.csv or ss[YR]pusb.csv e.g. ss08pusa.csv
+  - years 2008-2018
+  - save all CSV files in the same folder, with names ss[YR]pusa.csv or ss[YR]pusb.csv e.g. ss08pusa.csv
 
 - Install packages in `R`:
   - magrittr
@@ -16,7 +16,7 @@ To replicate:
   - ggrepel
   - knitr
   - rmarkdown
-		- survey
+  - survey
 
 - Modify "dataFolder" from R/makeAndest.r
 - Run `source('R/makeAndest.r')`
